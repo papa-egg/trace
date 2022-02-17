@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>A*算法</title>
+</head>
+<body>
+  <div style="width: 1000px; height: 800px">
+
+    <svg id="J_box" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+
+      <!--=所有坐标点=-->
+      <g id="J_g_1"></g>
+
+      <!--=遮挡物=-->
+      <g id="J_g_2"></g>
+
+      <!--=蔓延点=-->
+      <g id="J_g_3"></g>
+
+      <!--=最终路径点=-->
+      <g id="J_g_4"></g>
+
+      <!--=起点=-->
+      <g id="J_g_5"></g>
+
+      <!--=终点=-->
+      <g id="J_g_6"></g>
+    </svg>
+
+    <div>
+      <form class="radio-select">
+        <input type="radio" name="select" value="r">障碍物
+        <input type="radio" name="select" value="s">起点
+        <input type="radio" name="select" value="e">终点
+      </form>
+
+      <button class="btn" id="J_clear">清空</button>
+      <button class="btn" id="J_start">开始</button>
+
+    </div>
+  </div>
+
+  <script>
+
+    /**
+     * 传入所有点，生成最短连接线
+     * @param { Array } boxList 集合点
+     * @param { Array } obstacleList 障碍物
+     * @param { Array } boxListShadow 集合点镜像，作范围检索
+     * @param { Array } obstacleListShadow 障碍物镜像，作范围检索
+     * @returns { Array }
+     *
+     */
+    function GetAvoidPath (boxList, obstacleList, boxListShadow, obstacleListShadow) {
+      this.boxList = boxList;
+      this.obstacleList = obstacleList;
+      this.boxListShadow = boxListShadow;
+      this.obstacleListShadow = obstacleListShadow;
+
+      this.openList = [];
+      this.closeList = [];
+      this.pathList = [];
+
+      this.spt = null;
+      this.ept = null;
+    }
+
+    // 获取路径
+    GetAvoidPath.prototype.getPath = function (spt, ept) {
+      this.spt = spt;
+      this.ept = ept;
+
+      this.openList.push(spt);
+
+      this.spreadPath();
+
+      return {
+        pathList: this.pathList,
+        openList: this.openList,
+      };
+    }
+
+    // 坐标相似判断
+    GetAvoidPath.prototype.isEqual = function (A, B) {
+      if (A.x === B.x && A.y === B.y) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // 递归按期望值做检索蔓延
+    GetAvoidPath.prototype.spreadPath = function () {
+      if (this.openList.length <= 0) {
+        return false;
+      } else {
+        const fpt = this.openList.shift();
+        this.closeList.push(fpt);
+
+        if (this.isEqual(fpt, this.ept)) {
+          this.pathList = this.getParentList(fpt);
+        } else {
+          const roundList = this.getRoundList(fpt);
+
+          this.openList.push(...roundList);
+
+          roundList.sort((a, b) => { return (parseInt(a.G) + parseInt(a.H)) - (parseInt(b.G) + parseInt(b.H)) });
+
+          // 优化路径，更消耗性能
+          // this.resetPointer();
+
+          this.openList.sort((a, b) => { return (a.G + a.H) - (b.G + b.H) });
+
+          this.spreadPath();
+        }
+      }
+    }
+
+    // 获取所有父节点
+    GetAvoidPath.prototype.getParentList = function (pt) {
+      const rel = [];
+
+      traverParent(pt);
+
+      function traverParent (pt) {
+        rel.push(pt);
+
+        if (pt.parent) {
+          traverParent(pt.parent);
+
+          delete pt.parent;
+        }
+      }
+
+      rel.reverse();
+
+      return rel;
+    }
+
+    // 获取坐标点四周相邻点，并做可选过滤
+    GetAvoidPath.prototype.getRoundList = function (pt) {
+      const rel = [];
+      const nearList = [
+        { x: pt.x - 1, y: pt.y - 1 },
+        { x: pt.x, y: pt.y - 1 },
+        { x: pt.x + 1, y: pt.y - 1 } ,
+        { x: pt.x - 1, y: pt.y },
+        { x: pt.x + 1, y: pt.y },
+        { x: pt.x - 1, y: pt.y + 1 },
+        { x: pt.x, y: pt.y + 1 },
+        { x: pt.x + 1, y: pt.y + 1 } ,
+      ];
+
+      for (let cpt of nearList) {
+        if (cpt.x >= 0 && cpt.y >= 0) {
+          let flag = true;
+
+          if (flag) {
+            for (let item of this.closeList) {
+              if (this.isEqual(item, cpt)) {
+                flag = false;
+
+                break;
+              }
+            }
+          }
+
+          if (flag) {
+            for (let item of this.obstacleList) {
+              if (this.isEqual(item, cpt)) {
+                flag = false;
+
+                break;
+              }
+            }
+          }
+
+          if (flag) {
+            for (let item of this.openList) {
+              if (this.isEqual(item, cpt)) {
+                flag = false;
+
+                break;
+              }
+            }
+          }
+
+          if (flag) {
+
+            if (this.boxListShadow.indexOf(cpt.x + '|' + cpt.y) > -1) {
+              const apt = { x: cpt.x, y: cpt.y };
+              apt.parent = pt;
+              const mg = this.setFGH(pt, apt);
+
+              apt.G = mg.G;
+              apt.H = mg.H;
+
+              rel.push(apt);
+            }
+          }
+        }
+      }
+
+      return rel.sort((a, b) => a.G - b.G);
+    }
+
+    GetAvoidPath.prototype.setFGH = function (spt, apt) {
+      const xb = Math.abs(apt.x - spt.x);
+      const yb = Math.abs(apt.y - spt.y);
+
+      let G = spt.G || 0;
+
+      if (xb + yb === 2) {
+        G += 14;
+      } else {
+        G += 10;
+      }
+
+      const xc = Math.abs(this.ept.x - apt.x);
+      const yc = Math.abs(this.ept.y - apt.y);
+      const H = (xc + yc) * 10;
+
+      return {
+        G,
+        H,
+      }
+    }
+
+    GetAvoidPath.prototype.resetPointer = function () {
+      const allList = [...this.openList, ...this.closeList];
+      allList.sort((a, b) => { return a.G - b.G });
+
+      for (let pt of allList) {
+        const nearList = this.getNearList(pt, allList);
+
+        if (nearList[0]) {
+          const abs = Math.abs(pt.x - nearList[0].x) + Math.abs(pt.y - nearList[0].y);
+          let lateG = Number.MAX_VALUE;
+
+          if (abs === 1) {
+            lateG = nearList[0].G + 10;
+          } else if (abs === 2) {
+            lateG = nearList[0].G + 14;
+          }
+
+          if (pt.G > lateG) {
+            pt.G = lateG;
+            pt.parent = nearList[0];
+          }
+        }
+      }
+    }
+
+    // 获取坐标点四周坐标点
+    GetAvoidPath.prototype.getNearList = function (pt, allList) {
+      const rel = [];
+      const nearList = [
+        { x: pt.x - 1, y: pt.y - 1 },
+        { x: pt.x, y: pt.y - 1 },
+        { x: pt.x + 1, y: pt.y - 1 } ,
+        { x: pt.x - 1, y: pt.y },
+        { x: pt.x + 1, y: pt.y },
+        { x: pt.x - 1, y: pt.y + 1 },
+        { x: pt.x, y: pt.y + 1 },
+        { x: pt.x + 1, y: pt.y + 1 } ,
+      ];
+
+      for (let cpt of nearList) {
+        if (cpt.x >= 0 && cpt.y >= 0) {
+          let flag = false;
+
+          for (let item of allList) {
+            if (item.x === cpt.x && item.y === cpt.y) {
+              flag = true;
+
+              break;
+            }
+          }
+
+          if (flag) {
+            rel.push(cpt);
+          }
+        }
+      }
+
+      rel.sort((a, b) => a.G - b.G);
+
+      return rel;
+    }
+
+    // 获取两点之间角度值
+    GetAvoidPath.prototype.getAngleByPoint = function (start, end) {
+      const x = Math.abs(end.x - start.x);
+      const y = Math.abs(end.y - start.y);
+      const z = Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2));
+
+      if(x == 0 && y == 0){ return 0; }
+
+      const cos = y/z;
+      const radina = Math.acos(cos);
+      let angle = Math.floor(180/(Math.PI/radina));
+
+      if(start.x <= end.x && start.y > end.y){
+        angle = Math.abs(90 - angle);
+      }
+
+      if(start.x > end.x && start.y >= end.y){
+        angle += 90;
+      }
+
+      if(start.x >= end.x && start.y < end.y){
+        angle = 270 - angle;
+      }
+
+      if(start.x < end.x && start.y <= end.y){
+        angle += 270;
+      }
+
+      angle = 360 - angle;
+
+      return angle == 360 ? 0 : angle;
+    }
+
+  </script>
+
+  <script>
+
+    /**
+     * A*路径寻找检索算法
+     * @returns
+     *
+     */
+    function Tarce () {
+      this.boxList = []; // 全部坐标点
+      this.obstacleList = []; // 阻碍物
+      this.spt = { x: -1, y: -1 }; // 起始点
+      this.ept = { x: -1, y: -1 }; // 结束点
+
+      this.boxListShadow = [];
+      this.obstacleListShadow = [];
+
+      this.$box = document.getElementById('J_box'); // svg
+      this.$g1 = document.getElementById('J_g_1'); // 所有坐标
+      this.$g2 = document.getElementById('J_g_2'); // 遮挡物坐标
+      this.$g3 = document.getElementById('J_g_3'); // 蔓延点坐标
+      this.$g4 = document.getElementById('J_g_4'); // 最终路径点
+      this.$g5 = document.getElementById('J_g_5'); // 起点
+      this.$g6 = document.getElementById('J_g_6'); // 终点
+
+      this.width = this.$box.clientWidth;
+      this.height = this.$box.clientHeight;
+
+      this.createBox();
+    }
+
+    // 创建所有坐标点
+    Tarce.prototype.createBox = function () {
+      for (let i = 0; i < this.width / 20; i++) {
+        const _list = [];
+
+        for (let j = 0; j < this.height / 20; j++) {
+          _list.push({
+            x: i,
+            y: j,
+          })
+        }
+
+        this.boxList.push(..._list);
+        this.bindShadow(this.boxListShadow, _list);
+      }
+
+      this.renderBox({
+        list: this.boxList,
+        type: 1,
+      });
+    }
+
+    // 清空
+    Tarce.prototype.clearing = function () {
+      this.boxList = [];
+      this.obstacleList = [];
+      this.spt = { x: -1, y: -1 };
+      this.ept = { x: -1, y: -1 };
+      this.boxListShadow = [];
+      this.obstacleListShadow = [];
+
+      this.$g2.innerHTML = '';
+      this.$g3.innerHTML = '';
+      this.$g4.innerHTML = '';
+      this.$g5.innerHTML = '';
+      this.$g6.innerHTML = '';
+    }
+
+    // 开始检索
+    Tarce.prototype.starting = function () {
+      if (this.spt.x > -1 && this.spt.y > -1 && this.ept.x > -1 && this.ept.y > -1) {
+        const APath = new GetAvoidPath(this.boxList, this.obstacleList, this.boxListShadow, this.obstacleListShadow);
+
+        const { pathList, openList } = APath.getPath(this.spt, this.ept);
+
+        this.renderBox({
+          list: openList,
+          type: 3,
+        })
+
+        this.renderBox({
+          list: pathList,
+          type: 4,
+        })
+      }
+    }
+
+    // 添加事件
+    Tarce.prototype.addBox = function (pt) {
+      const direction = this.getSelect();
+
+      switch (direction) {
+
+        // 添加起点
+        case 's':
+          this.spt.x = pt.x;
+          this.spt.y = pt.y;
+
+          this.renderBox({
+            list: [this.spt],
+            type: 5,
+          });
+
+          break;
+
+        // 添加终点
+        case 'e':
+          this.ept.x = pt.x;
+          this.ept.y = pt.y;
+
+          this.renderBox({
+            list: [this.ept],
+            type: 6,
+          });
+
+          break;
+
+        // 添加障碍物
+        case 'r':
+          if (this.isEqual(this.spt, pt) || this.isEqual(this.ept, pt)) return;
+
+          const rList = this.getObstacleRoundList(pt);
+          this.obstacleList.push(...rList);
+          this.bindShadow(this.obstacleListShadow, rList);
+
+          this.renderBox({
+            list: this.obstacleList,
+            type: 2,
+          });
+
+          break;
+      }
+    }
+
+    // 获取障碍物扩散区域
+    Tarce.prototype.getObstacleRoundList = function (pt) {
+      const list = [];
+      const nearList = [
+        { x: pt.x, y: pt.y },
+        { x: pt.x - 1, y: pt.y - 1 },
+        { x: pt.x, y: pt.y - 1 },
+        { x: pt.x + 1, y: pt.y - 1} ,
+        { x: pt.x - 1, y: pt.y },
+        { x: pt.x + 1, y: pt.y },
+        { x: pt.x - 1, y: pt.y + 1 },
+        { x: pt.x, y: pt.y + 1 },
+        { x: pt.x + 1, y: pt.y + 1} ,
+      ];
+
+      for (let cpt of nearList) {
+        if (this.boxListShadow.indexOf(cpt.x + '|' + cpt.y) > -1) {
+          let flag = true;
+
+          if (this.isEqual(this.spt, cpt)) {
+            flag = false;
+
+            break;
+          }
+
+          if (this.isEqual(this.ept, cpt)) {
+            flag = false;
+
+            break;
+          }
+
+          if (flag) {
+            list.push(cpt);
+          }
+        }
+      }
+
+      return list;
+    }
+
+    Tarce.prototype.bindShadow = function (shadow, list) {
+      for (let pt of list) {
+        if (shadow.indexOf(pt.x + '|' + pt.y) < 0) {
+          shadow.push(pt.x + '|' + pt.y);
+        }
+      }
+    }
+
+    Tarce.prototype.getSelect = function () {
+      let value = '';
+      const radio = document.getElementsByName('select');
+
+      for(let i = 0; i < radio.length ; i++){
+        if(radio[i].checked){
+          value = radio[i].value;
+          break;
+        }
+      }
+
+      return value;
+    }
+
+    Tarce.prototype.isEqual = function (A, B) {
+      if (A.x === B.x && A.y === B.y) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // 渲染点
+    Tarce.prototype.renderBox = function ({ list, type }) {
+      let color = '';
+      let $aim = null;
+
+      switch (type) {
+        case 1:
+          color = '#fffcf8';
+          $aim = this.$g1;
+          break;
+        case 2:
+          color = '#008000';
+          $aim = this.$g2;
+          break;
+        case 3:
+          color = '#ffff00';
+          $aim = this.$g3;
+          break;
+        case 4:
+          color = '#000000';
+          $aim = this.$g4;
+          break;
+        case 5:
+          color = '#0000ff';
+          $aim = this.$g5;
+          break;
+        case 6:
+          color = '#ff0000';
+          $aim = this.$g6;
+          break;
+      }
+
+      $aim.innerHTML = '';
+
+      for (let pt of list) {
+        const elem = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        elem.setAttribute('stroke', '#ccc');
+        elem.setAttribute('fill', color);
+        elem.setAttribute('x', pt.x * 20);
+        elem.setAttribute('y', pt.y * 20);
+        elem.setAttribute('width', 20);
+        elem.setAttribute('height', 20);
+
+        $aim.appendChild(elem);
+      }
+    }
+  </script>
+
+  <script>
+
+    const trace = new Tarce();
+
+    // 点击事件，添加起点、终点、障碍物
+    trace.$g1.onclick = function (event) {
+      const x = Math.floor(event.x / 20);
+      const y = Math.floor(event.y / 20);
+
+      trace.addBox({ x, y });
+    }
+
+    // 点击事件，添加起点、终点、障碍物
+    trace.$g2.onclick = function (event) {
+      const x = Math.floor(event.x / 20);
+      const y = Math.floor(event.y / 20);
+
+      trace.addBox({ x, y });
+    }
+
+    // 开始事件
+    document.getElementById('J_start').onclick = function () {
+      trace.starting();
+    }
+
+    // 清空
+    document.getElementById('J_clear').onclick = function () {
+      trace.clearing();
+    }
+
+  </script>
+
+  <style>
+    *{ margin: 0; padding: 0 }
+    #J_box{
+      cursor: pointer;
+    }
+    .radio-select{
+      margin: 15px;
+    }
+    .radio-select input{
+      margin-left: 10px;
+      margin-right: 5px;
+      cursor: pointer;
+    }
+    .btn{
+      margin-left: 25px;
+      padding: 5px 10px;
+    }
+  </style>
+</body>
+</html>
